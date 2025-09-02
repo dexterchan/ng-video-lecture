@@ -1,0 +1,44 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nanogpt-lecture"
+version = "0.1.0"
+description = "NanoGPT implementation with PyTorch Metal support"
+authors = [
+    {name = "Your Name"}
+]
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.21.0",
+    "transformers>=4.0.0",
+    "datasets>=2.0.0",
+    "tqdm>=4.65.0",
+    "jupyterlab>=4.0.0",
+    "ipywidgets>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=23.0",
+    "isort>=5.0",
+    "flake8>=6.0",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

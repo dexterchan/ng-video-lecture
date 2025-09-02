@@ -1,0 +1,15 @@
+.ipynb_checkpoints/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
+*.pyzw
+.venv/
+.DS_Store
+lib/
+metastore_db/
+uv.lock
