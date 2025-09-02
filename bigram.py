@@ -1,3 +1,4 @@
+#%%
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -5,12 +6,13 @@ from torch.nn import functional as F
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
-max_iters = 3000
+max_iters = 10000
 eval_interval = 300
 learning_rate = 1e-2
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
+device = 'mps' if torch.backends.mps.is_available() else 'cpu'# for mac users with m1/m2 chips
 eval_iters = 200
-# ------------
+#%% ------------
 
 torch.manual_seed(1337)
 
@@ -43,6 +45,7 @@ def get_batch(split):
     x, y = x.to(device), y.to(device)
     return x, y
 
+#declare no backpropagating function
 @torch.no_grad()
 def estimate_loss():
     out = {}
@@ -120,3 +123,5 @@ for iter in range(max_iters):
 # generate from the model
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
+
+# %%
