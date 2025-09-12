@@ -49,7 +49,7 @@ def get_batch(split):
 @torch.no_grad()
 def estimate_loss():
     out = {}
-    model.eval()
+    model.eval() #set model in evaluation mode where dropout disabled
     for split in ['train', 'val']:
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
@@ -57,7 +57,7 @@ def estimate_loss():
             logits, loss = model(X, Y)
             losses[k] = loss.item()
         out[split] = losses.mean()
-    model.train()
+    model.train() #set model back to training mode where dropout activated
     return out
 
 # super simple bigram model
@@ -71,6 +71,9 @@ class BigramLanguageModel(nn.Module):
     def forward(self, idx, targets=None):
 
         # idx and targets are both (B,T) tensor of integers
+        # B = Batch Size ~ 32 running 32 batch in parallel
+        # T = Block size ~ 8 running looking back 8 samples
+        # C = Class ~ vocab size here
         logits = self.token_embedding_table(idx) # (B,T,C)
 
         if targets is None:
@@ -97,13 +100,24 @@ class BigramLanguageModel(nn.Module):
             # append sampled index to the running sequence
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
-
+#%%
 model = BigramLanguageModel(vocab_size)
 m = model.to(device)
+xb, yb = get_batch('train')
+out, loss = m(xb, yb)
+# Print tensor shapes
+print(f"logits shape: {out[0].shape}")  
+#output size is batch_size * Block size , vocabsize
+print(f"loss: {loss}") # expect loss to be -1 * ln(1/65)
+#%%
+outputs = m.generate(torch.zeros((1,1), dtype=torch.long, device=device), max_new_tokens=20)
+print(outputs.shape)
+print(decode( outputs[0].tolist()))
 
+#%%
 # create a PyTorch optimizer
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-
+model = model.to(device)
 for iter in range(max_iters):
 
     # every once in a while evaluate the loss on train and val sets
@@ -118,6 +132,7 @@ for iter in range(max_iters):
     logits, loss = model(xb, yb)
     optimizer.zero_grad(set_to_none=True)
     loss.backward()
+    #loss.item() is a single value
     optimizer.step()
 
 # generate from the model
