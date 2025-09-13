@@ -13,3 +13,4 @@ __pycache__/
 lib/
 metastore_db/
 uv.lock
+input.txt

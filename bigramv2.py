@@ -3,12 +3,13 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
+
 # hyperparameters
 batch_size = 32 # how many independent sequences will we process in parallel?
 block_size = 8 # what is the maximum context length for predictions?
 max_iters = 10000
 eval_interval = 300
-learning_rate = 1e-2
+learning_rate = 1e-3 #reduce learning way by 10
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device = 'mps' if torch.backends.mps.is_available() else 'cpu'# for mac users with m1/m2 chips
 eval_iters = 200
@@ -62,6 +63,35 @@ def estimate_loss():
     model.train() #set model back to training mode where dropout activated
     return out
 
+
+class Head(nn.Module):
+    """ one head of self-attention """
+
+    def __init__(self, head_size):
+        super().__init__()
+        self.key = nn.Linear(N_EMBD, head_size, bias=False)
+        self.query = nn.Linear(N_EMBD, head_size, bias=False)
+        self.value = nn.Linear(N_EMBD, head_size, bias=False)
+        self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
+
+        #self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        # input of size (batch, time-step, channels)
+        # output of size (batch, time-step, head size)
+        B,T,C = x.shape
+        k = self.key(x)   # (B,T,hs)
+        q = self.query(x) # (B,T,hs)
+        # compute attention scores ("affinities")
+        wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
+        wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
+        wei = F.softmax(wei, dim=-1) # (B, T, T)
+        #wei = self.dropout(wei)
+        # perform the weighted aggregation of the values
+        v = self.value(x) # (B,T,hs)
+        out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
+        return out
+
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
 
@@ -72,6 +102,7 @@ class BigramLanguageModel(nn.Module):
         # declare a positional embedding
         # For look period of T, we have n_embed vector for each time instance
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
+        self.sa_head = Head(n_embed)
         # declare a linear layer to project the embedding to the vocab size
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
@@ -85,6 +116,11 @@ class BigramLanguageModel(nn.Module):
         # get position embedding from 0 to T-1
         pos_embed = self.position_embedding_table(torch.arange(T, device=device)) # (T, N_EMBD)
         x = token_embed + pos_embed # (B, T, N_EMBD) + (T, N_EMBD) = (B, T, N_EMBD) broadcasted
+
+        #feed to the self attention head. by one head
+        x = self.sa_head(x)
+
+
         # x is not just the token embedding of the meaning but also contain the temporal information as well
         # convert the token embedding to logits
         logits = self.lm_head(x) #B, T, C(Vocab size)
@@ -103,7 +139,8 @@ class BigramLanguageModel(nn.Module):
         # idx is (B, T) array of indices in the current context
         for _ in range(max_new_tokens):
             # get the predictions
-            logits, loss = self(idx)
+            idx_cond = idx[:, -block_size:] #limit the input to be block size of T
+            logits, loss = self(idx_cond)
             # focus only on the last time step
             logits = logits[:, -1, :] # becomes (B, C)
             # apply softmax to get probabilities
