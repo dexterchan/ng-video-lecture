@@ -2,6 +2,8 @@
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import os
+import requests
 
 
 # hyperparameters
@@ -18,7 +20,9 @@ N_EMBD = 32
 #%% ------------
 
 torch.manual_seed(1337)
-
+if not os.path.exists('input.txt'):
+    #download https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt to input.txt
+    requests.get('https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt', allow_redirects=True, stream=True)
 # wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
@@ -63,6 +67,17 @@ def estimate_loss():
     model.train() #set model back to training mode where dropout activated
     return out
 
+class MultiHeadAttention(nn.Module):
+    """ multiple heads of self-attention in parallel """
+
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        
+
+    def forward(self, x):
+        return torch.cat([h(x) for h in self.heads], dim=-1)
+        
 
 class Head(nn.Module):
     """ one head of self-attention """
@@ -79,6 +94,13 @@ class Head(nn.Module):
     def forward(self, x):
         # input of size (batch, time-step, channels)
         # output of size (batch, time-step, head size)
+        # next, we gather historical information
+        # every token emits two information vectors: query and key
+        # query vector: what am I looking for?
+        # key vector: what do I contain?
+        # the dot product of query and key becomes weight here
+        # if query and key is highly correlated, the weight has high value
+        # if query and key is NOT correlated, the weight becomes very small -> 0.00
         B,T,C = x.shape
         k = self.key(x)   # (B,T,hs)
         q = self.query(x) # (B,T,hs)
@@ -88,6 +110,7 @@ class Head(nn.Module):
         wei = F.softmax(wei, dim=-1) # (B, T, T)
         #wei = self.dropout(wei)
         # perform the weighted aggregation of the values
+        # v is the projected information of the single head after query dot key
         v = self.value(x) # (B,T,hs)
         out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
         return out
@@ -102,7 +125,8 @@ class BigramLanguageModel(nn.Module):
         # declare a positional embedding
         # For look period of T, we have n_embed vector for each time instance
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        self.sa_head = Head(n_embed)
+        #self.sa_head = Head(n_embed)
+        self.sa_heads = MultiHeadAttention(4, n_embed//4)
         # declare a linear layer to project the embedding to the vocab size
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
@@ -118,7 +142,8 @@ class BigramLanguageModel(nn.Module):
         x = token_embed + pos_embed # (B, T, N_EMBD) + (T, N_EMBD) = (B, T, N_EMBD) broadcasted
 
         #feed to the self attention head. by one head
-        x = self.sa_head(x)
+        #x = self.sa_head(x)
+        x = self.sa_heads(x)
 
 
         # x is not just the token embedding of the meaning but also contain the temporal information as well
