@@ -7,15 +7,18 @@ import requests
 
 
 # hyperparameters
-batch_size = 32 # how many independent sequences will we process in parallel?
-block_size = 8 # what is the maximum context length for predictions?
-max_iters = 10000
-eval_interval = 300
-learning_rate = 1e-3 #reduce learning way by 10
+batch_size = 64 # how many independent sequences will we process in parallel?
+block_size = 256 # what is the maximum context length for predictions?
+max_iters = 5000
+eval_interval = 500
+learning_rate = 3e-4 #reduce learning way by 10 ; bring down learning rate when u have more parameters
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 device = 'mps' if torch.backends.mps.is_available() else 'cpu'# for mac users with m1/m2 chips
 eval_iters = 200
-N_EMBD = 32
+N_EMBD = 384
+N_HEAD = 6
+N_LAYERS = 6
+DROP_OUT = 0.2
 
 #%% ------------
 
@@ -74,10 +77,11 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
         self.proj = nn.Linear(n_embd, n_embd)
+        self.dropout = nn.Dropout(DROP_OUT)
 
     def forward(self, x):
         out = torch.cat([h(x) for h in self.heads], dim=-1)
-        out = self.proj(out)
+        out = self.dropout(self.proj(out))
         return out
         
 
@@ -91,7 +95,7 @@ class Head(nn.Module):
         self.value = nn.Linear(N_EMBD, head_size, bias=False)
         self.register_buffer('tril', torch.tril(torch.ones(block_size, block_size)))
 
-        #self.dropout = nn.Dropout(dropout)
+        self.dropout = nn.Dropout(DROP_OUT)
 
     def forward(self, x):
         # input of size (batch, time-step, channels)
@@ -110,7 +114,7 @@ class Head(nn.Module):
         wei = q @ k.transpose(-2,-1) * k.shape[-1]**-0.5 # (B, T, hs) @ (B, hs, T) -> (B, T, T)
         wei = wei.masked_fill(self.tril[:T, :T] == 0, float('-inf')) # (B, T, T)
         wei = F.softmax(wei, dim=-1) # (B, T, T)
-        #wei = self.dropout(wei)
+        wei = self.dropout(wei)
         # perform the weighted aggregation of the values
         # v is the projected information of the single head after query dot key
         v = self.value(x) # (B,T,hs)
@@ -125,8 +129,8 @@ class FeedForward(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(n_embd, 4 * n_embd),
             nn.ReLU(),
-            nn.Dropout(0.2), # Add dropout with 0.2 probability
             nn.Linear(4 * n_embd, n_embd),
+            nn.Dropout(DROP_OUT), # Add dropout with 0.4 probability
         )
 
     def forward(self, x):
@@ -183,7 +187,7 @@ class Block(nn.Module):
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
 
-    def __init__(self, vocab_size, n_embed):
+    def __init__(self, vocab_size, n_embed, n_layers):
         super().__init__()
         # each token directly reads off the logits for the next token from a lookup table
         self.token_embedding_table = nn.Embedding(vocab_size, n_embed)
@@ -192,11 +196,9 @@ class BigramLanguageModel(nn.Module):
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
         
         self.blocks = nn.Sequential(
-            Block(n_embed, n_head=4),
-            Block(n_embed, n_head=4),
-            Block(n_embed, n_head=4),
-            nn.LayerNorm(n_embed)
+            *[Block(n_embed, n_head=N_HEAD) for _ in range(n_layers)]
         )
+        self.ln_f = nn.LayerNorm(n_embed)
         # declare a linear layer to project the embedding to the vocab size
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
@@ -219,6 +221,8 @@ class BigramLanguageModel(nn.Module):
         # # feed forward to add more thinking here before feeding to linear layer for final logit convention
         # x = self.ffwd(x) # (B, T, N_EMBD)
         x = self.blocks(x)
+
+        x = self.ln_f(x) # (B, T, N_EMBD)
 
 
         # x is not just the token embedding of the meaning but also contain the temporal information as well
@@ -252,7 +256,7 @@ class BigramLanguageModel(nn.Module):
             idx = torch.cat((idx, idx_next), dim=1) # (B, T+1)
         return idx
 #%%
-model = BigramLanguageModel(vocab_size, N_EMBD)
+model = BigramLanguageModel(vocab_size, N_EMBD, N_LAYERS)
 m = model.to(device)
 xb, yb = get_batch('train')
 out, loss = m(xb, yb)
