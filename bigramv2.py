@@ -138,11 +138,16 @@ class Block(nn.Module):
         super().__init__()
         head_size = n_embd // n_head
         self.sa = MultiHeadAttention(n_head, head_size)
+        # declare feed forward
         self.ffwd = FeedForward(n_embd)
         
     def forward(self, x):
-        x = self.sa(x)
-        x = self.ffwd(x)
+
+        #feed to the self attention head. by one head
+        x = self.sa(x) # apply multi head of attention (B, T, N_EMBD)
+        
+        # feed forward to add more thinking here before feeding to linear layer for final logit convention
+        x = self.ffwd(x) # (B, T, N_EMBD)
         return x
 
 # super simple bigram model
@@ -155,12 +160,12 @@ class BigramLanguageModel(nn.Module):
         # declare a positional embedding
         # For look period of T, we have n_embed vector for each time instance
         self.position_embedding_table = nn.Embedding(block_size, n_embed)
-        #self.sa_head = Head(n_embed)
-        self.sa_heads = MultiHeadAttention(4, n_embed//4)
-
-        # declare feed forward
-        self.ffwd = FeedForward(n_embed)
         
+        self.blocks = nn.Sequential(
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+            Block(n_embed, n_head=4),
+        )
         # declare a linear layer to project the embedding to the vocab size
         self.lm_head = nn.Linear(n_embed, vocab_size)
 
@@ -175,12 +180,14 @@ class BigramLanguageModel(nn.Module):
         pos_embed = self.position_embedding_table(torch.arange(T, device=device)) # (T, N_EMBD)
         x = token_embed + pos_embed # (B, T, N_EMBD) + (T, N_EMBD) = (B, T, N_EMBD) broadcasted
 
-        #feed to the self attention head. by one head
-        #x = self.sa_head(x)
-        x = self.sa_heads(x) # apply multu head of attention (B, T, N_EMBD)
+        # replaced by multiple blocks
+        # #feed to the self attention head. by one head
+        # #x = self.sa_head(x)
+        # x = self.sa_heads(x) # apply multu head of attention (B, T, N_EMBD)
 
-        # feed forward to add more thinking here before feeding to linear layer for final logit convention
-        x = self.ffwd(x) # (B, T, N_EMBD)
+        # # feed forward to add more thinking here before feeding to linear layer for final logit convention
+        # x = self.ffwd(x) # (B, T, N_EMBD)
+        x = self.blocks(x)
 
 
         # x is not just the token embedding of the meaning but also contain the temporal information as well
