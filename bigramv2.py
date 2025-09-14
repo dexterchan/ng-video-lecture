@@ -70,13 +70,15 @@ def estimate_loss():
 class MultiHeadAttention(nn.Module):
     """ multiple heads of self-attention in parallel """
 
-    def __init__(self, num_heads, head_size):
+    def __init__(self, num_heads, head_size, n_embd):
         super().__init__()
         self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
-        
+        self.proj = nn.Linear(n_embd, n_embd)
 
     def forward(self, x):
-        return torch.cat([h(x) for h in self.heads], dim=-1)
+        out = torch.cat([h(x) for h in self.heads], dim=-1)
+        out = self.proj(out)
+        return out
         
 
 class Head(nn.Module):
@@ -137,18 +139,46 @@ class Block(nn.Module):
         # n_embd: embedding dimension, n_head: the number of heads we'd like
         super().__init__()
         head_size = n_embd // n_head
-        self.sa = MultiHeadAttention(n_head, head_size)
+        self.sa = MultiHeadAttention(n_head, head_size, n_embd)
         # declare feed forward
         self.ffwd = FeedForward(n_embd)
+        # declare layer norm 1
+        self.ln1 = nn.LayerNorm(n_embd)
+        # declare layer norm 2
+        self.ln2 = nn.LayerNorm(n_embd)
         
     def forward(self, x):
 
-        #feed to the self attention head. by one head
-        x = self.sa(x) # apply multi head of attention (B, T, N_EMBD)
+        # Deep residual learning to counter deep nested
+        # feed to the self attention head. by one head
+        # reminder "+=" not working here
+        x = x + self.sa(x) # apply multi head of attention (B, T, N_EMBD)
         
         # feed forward to add more thinking here before feeding to linear layer for final logit convention
-        x = self.ffwd(x) # (B, T, N_EMBD)
+        x = x + self.ffwd(x) # (B, T, N_EMBD)
         return x
+
+# # implement layerNorm here
+# class BatchNorm1d:
+#     def __init__(self, dim, eps=1e-5, momentum=0.1):
+#         self.eps = eps
+#         self.gamma = torch.ones(dim)
+#         self.beta = torch.zeros(dim)
+
+#     def set_device(self, device):
+#         self.gamma = self.gamma.to(device)
+#         self.beta = self.beta.to(device)
+
+#     def __call__(self, x):
+#         # calculate the forward pass
+#         xmean = x.mean(1, keepdim=True) # batch mean
+#         xvar = x.var(1, keepdim=True) # batch variance
+#         xhat = (x - xmean) / torch.sqrt(xvar + self.eps) # normalize to unit variance
+#         self.out = self.gamma * xhat + self.beta
+#         return self.out
+
+#     def parameters(self):
+#         return [self.gamma, self.beta]
 
 # super simple bigram model
 class BigramLanguageModel(nn.Module):
