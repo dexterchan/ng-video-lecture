@@ -142,20 +142,20 @@ class Block(nn.Module):
         self.sa = MultiHeadAttention(n_head, head_size, n_embd)
         # declare feed forward
         self.ffwd = FeedForward(n_embd)
-        # declare layer norm 1
+        # declare layer norm 1 #https://arxiv.org/pdf/1607.06450
         self.ln1 = nn.LayerNorm(n_embd)
-        # declare layer norm 2
+        # declare layer norm 2 # https://arxiv.org/pdf/1607.06450
         self.ln2 = nn.LayerNorm(n_embd)
         
     def forward(self, x):
 
-        # Deep residual learning to counter deep nested
+        # Deep residual learning to counter deep nested - https://arxiv.org/pdf/1512.03385
         # feed to the self attention head. by one head
         # reminder "+=" not working here
-        x = x + self.sa(x) # apply multi head of attention (B, T, N_EMBD)
+        x = x + self.sa(self.ln1(x)) # apply multi head of attention (B, T, N_EMBD)
         
         # feed forward to add more thinking here before feeding to linear layer for final logit convention
-        x = x + self.ffwd(x) # (B, T, N_EMBD)
+        x = x + self.ffwd(self.ln2(x)) # (B, T, N_EMBD)
         return x
 
 # # implement layerNorm here
@@ -195,6 +195,7 @@ class BigramLanguageModel(nn.Module):
             Block(n_embed, n_head=4),
             Block(n_embed, n_head=4),
             Block(n_embed, n_head=4),
+            nn.LayerNorm(n_embed)
         )
         # declare a linear layer to project the embedding to the vocab size
         self.lm_head = nn.Linear(n_embed, vocab_size)
