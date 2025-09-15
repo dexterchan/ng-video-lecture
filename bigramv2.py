@@ -1,4 +1,5 @@
 #%%
+from datetime import datetime, timedelta
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
@@ -29,7 +30,8 @@ if not os.path.exists('input.txt'):
 # wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
 with open('input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
-
+start_time = datetime.now()
+print(f"{start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 # here are all the unique characters that occur in this text
 chars = sorted(list(set(text)))
 vocab_size = len(chars)
@@ -98,6 +100,13 @@ class Head(nn.Module):
         self.dropout = nn.Dropout(DROP_OUT)
 
     def forward(self, x):
+        """
+            Cross attention notes:
+                x is private information of the tokens
+                v is the projected information of the single head after query dot key
+                for cross attention
+                key and value would come from another source (not x!)
+        """
         # input of size (batch, time-step, channels)
         # output of size (batch, time-step, head size)
         # next, we gather historical information
@@ -119,6 +128,7 @@ class Head(nn.Module):
         # v is the projected information of the single head after query dot key
         v = self.value(x) # (B,T,hs)
         out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
+        
         return out
 
 class FeedForward(nn.Module):
@@ -278,7 +288,7 @@ for iter in range(max_iters):
     # every once in a while evaluate the loss on train and val sets
     if iter % eval_interval == 0:
         losses = estimate_loss()
-        print(f"step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
+        print(f"{datetime.now().strftime('%Y-%m-%d %H:%M:%S')} step {iter}: train loss {losses['train']:.4f}, val loss {losses['val']:.4f}")
 
     # sample a batch of data
     xb, yb = get_batch('train')
@@ -294,4 +304,6 @@ for iter in range(max_iters):
 context = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(decode(m.generate(context, max_new_tokens=500)[0].tolist()))
 
-# %%
+end_time = datetime.now()
+print(f"{end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"Total time: {str(end_time - start_time).split('.')[0]}")# %%
